@@ -21,6 +21,19 @@ config UML_NET
         enable at least one of the following transport options to actually
         make use of UML networking.
 
+config UML_NET_RANDOM_MAC
+	bool "Use random MAC addresses for network interfaces"
+	default n
+	depends on UML_NET
+	help
+        Virtual network devices inside a User-Mode Linux instance must be
+        assigned a MAC (Ethernet) address. If none is specified on the UML
+        command line, one must be automatically computed. If this option is
+        enabled, a randomly generated address is used. Otherwise, if this
+        option is disabled, the address is generated from a SHA1 hash of
+        the umid of the UML instance and the interface name. The latter choice
+        is useful to make MAC addresses predictable.
+
 config UML_NET_ETHERTAP
 	bool "Ethertap transport"
 	depends on UML_NET

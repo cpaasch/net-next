@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <termios.h>
 #include <unistd.h>
@@ -167,9 +168,30 @@ static void port_pre_exec(void *arg)
 int port_connection(int fd, int *socket, int *pid_out)
 {
 	int new, err;
-	char *argv[] = { "/usr/sbin/in.telnetd", "-L",
-			 "/usr/lib/uml/port-helper", NULL };
 	struct port_pre_exec_data data;
+
+	/************************************************/
+	/* Changed for better compatibility with Netkit */
+	/************************************************/
+
+/*	char *argv[] = { "/usr/sbin/in.telnetd", "-L",
+			 "/usr/lib/uml/port-helper", NULL }; */
+
+	char *netkit_home, port_helper_bin[4096];
+	
+	netkit_home = getenv("NETKIT_HOME");
+	if (!netkit_home)
+		netkit_home = getenv("VLAB_HOME");
+
+	if (!netkit_home)
+		strcpy (port_helper_bin, "/usr/lib/uml/port-helper");
+	else
+		sprintf (port_helper_bin, "%s/bin/port-helper", netkit_home);
+
+	char *argv[] = { "/usr/sbin/in.telnetd", "-L",
+			 port_helper_bin, NULL };
+
+	/*****************************************/
 
 	new = accept(fd, NULL, 0);
 	if (new < 0)

@@ -80,7 +80,7 @@ KBUILD_CPPFLAGS += -I$(srctree)/$(HOST_DIR)/include \
 # defines more robust
 
 KERNEL_DEFINES = $(strip -Derrno=kernel_errno -Dsigprocmask=kernel_sigprocmask \
-			 -Dmktime=kernel_mktime $(ARCH_KERNEL_DEFINES))
+			 -Dmktime=kernel_mktime -Dstrrchr=kernel_strrchr $(ARCH_KERNEL_DEFINES))
 KBUILD_CFLAGS += $(KERNEL_DEFINES)
 
 PHONY += linux
