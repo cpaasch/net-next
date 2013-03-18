@@ -731,7 +731,7 @@ static void ubd_close_dev(struct ubd *ubd_dev)
 static int ubd_open_dev(struct ubd *ubd_dev)
 {
 	struct openflags flags;
-	char **back_ptr;
+	char **back_ptr, *tmp;
 	int err, create_cow, *create_ptr;
 	int fd;
 
@@ -739,6 +739,11 @@ static int ubd_open_dev(struct ubd *ubd_dev)
 	create_cow = 0;
 	create_ptr = (ubd_dev->cow.file != NULL) ? &create_cow : NULL;
 	back_ptr = ubd_dev->no_cow ? NULL : &ubd_dev->cow.file;
+
+
+	tmp = strchr(ubd_dev->file, ',');
+	if (tmp)
+		ubd_dev->file[tmp - ubd_dev->file] = '\0';
 
 	fd = open_ubd_file(ubd_dev->file, &ubd_dev->openflags, ubd_dev->shared,
 				back_ptr, &ubd_dev->cow.bitmap_offset,
