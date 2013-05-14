@@ -925,6 +925,7 @@ static bool tcp_is_sackblock_valid(struct tcp_sock *tp, bool is_dsack,
 		return false;
 
 	/* Nasty start_seq wrap-around check (see comments above) */
+	/* XXX TODO CHECK THIS HERE */
 	if (!before(start_seq, tp->snd_nxt))
 		return false;
 
@@ -1557,14 +1558,14 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 	struct sk_buff *skb;
 	int num_sacks = min(TCP_NUM_SACKS, (ptr[1] - TCPOLEN_SACK_BASE) >> 3);
 	int used_sacks;
-	bool found_dup_sack = false;
+	bool found_dup_sack = false, first = true;
 	int i, j;
 	int first_sack_index;
 
 	state.flag = 0;
 	state.reord = tp->packets_out;
 
-	if (!tp->sacked_out) {
+	if (!tp->sacked_out && !tp->acked_out) {
 		if (WARN_ON(tp->fackets_out))
 			tp->fackets_out = 0;
 		tcp_highest_sack_reset(sk);
@@ -1614,6 +1615,16 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 			NET_INC_STATS_BH(sock_net(sk), mib_idx);
 			if (i == 0)
 				first_sack_index = -1;
+
+			/* We have to reproduce the first check of
+			 * tcp_is_sackblock_valid, because we don't want to
+			 * account dup-acks if the sack-blog is corrupted.
+			 */
+			if (first &&
+			    before(sp[used_sacks].start_seq, sp[used_sacks].end_seq)) {
+				first = false; /* Only account dupack once per packet */
+				tp->acked_out++;
+			}
 			continue;
 		}
 
@@ -1742,6 +1753,7 @@ out:
 
 #if FASTRETRANS_DEBUG > 0
 	WARN_ON((int)tp->sacked_out < 0);
+	WARN_ON((int)tp->acked_out < 0);
 	WARN_ON((int)tp->lost_out < 0);
 	WARN_ON((int)tp->retrans_out < 0);
 	WARN_ON((int)tcp_packets_in_flight(tp) < 0);
@@ -2185,7 +2197,7 @@ static void tcp_update_scoreboard(struct sock *sk, int fast_rexmit)
 			lost = 1;
 		tcp_mark_head_lost(sk, lost, 0);
 	} else {
-		int sacked_upto = tp->sacked_out - tp->reordering;
+		int sacked_upto = tcp_acked_out(tp) - tp->reordering;
 		if (sacked_upto >= 0)
 			tcp_mark_head_lost(sk, sacked_upto, 0);
 		else if (fast_rexmit)
@@ -2949,7 +2961,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 	int flag = 0;
 	u32 pkts_acked = 0;
 	u32 reord = tp->packets_out;
-	u32 prior_sacked = tp->sacked_out;
+	u32 prior_sacked = tcp_acked_out(tp);
 	s32 seq_rtt = -1;
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
@@ -3053,7 +3065,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
 
 			delta = tcp_is_fack(tp) ? pkts_acked :
-						  prior_sacked - tp->sacked_out;
+						  prior_sacked - tcp_acked_out(tp);
 			tp->lost_cnt_hint -= min(tp->lost_cnt_hint, delta);
 		}
 
