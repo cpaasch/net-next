@@ -1752,15 +1752,15 @@ out:
 /* Limits sacked_out so that sum with lost_out isn't ever larger than
  * packets_out. Returns false if sacked_out adjustement wasn't necessary.
  */
-static bool tcp_limit_reno_sacked(struct tcp_sock *tp)
+static bool tcp_limit_reno_acked(struct tcp_sock *tp)
 {
 	u32 holes;
 
 	holes = max(tp->lost_out, 1U);
 	holes = min(holes, tp->packets_out);
 
-	if ((tp->sacked_out + holes) > tp->packets_out) {
-		tp->sacked_out = tp->packets_out - holes;
+	if ((tp->acked_out + holes) > tp->packets_out) {
+		tp->acked_out = tp->packets_out - holes;
 		return true;
 	}
 	return false;
@@ -1773,40 +1773,40 @@ static bool tcp_limit_reno_sacked(struct tcp_sock *tp)
 static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	if (tcp_limit_reno_sacked(tp))
+	if (tcp_limit_reno_acked(tp))
 		tcp_update_reordering(sk, tp->packets_out + addend, 0);
 }
 
 /* Emulate SACKs for SACKless connection: account for a new dupack. */
 
-static void tcp_add_reno_sack(struct sock *sk)
+static void tcp_add_reno_ack(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	tp->sacked_out++;
+	tp->acked_out++;
 	tcp_check_reno_reordering(sk, 0);
 	tcp_verify_left_out(tp);
 }
 
 /* Account for ACK, ACKing some data in Reno Recovery phase. */
 
-static void tcp_remove_reno_sacks(struct sock *sk, int acked)
+static void tcp_remove_reno_acks(struct sock *sk, int acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	if (acked > 0) {
 		/* One ACK acked hole. The rest eat duplicate ACKs. */
-		if (acked - 1 >= tp->sacked_out)
-			tp->sacked_out = 0;
+		if (acked - 1 >= tp->acked_out)
+			tp->acked_out = 0;
 		else
-			tp->sacked_out -= acked - 1;
+			tp->acked_out -= acked - 1;
 	}
 	tcp_check_reno_reordering(sk, acked);
 	tcp_verify_left_out(tp);
 }
 
-static inline void tcp_reset_reno_sack(struct tcp_sock *tp)
+static inline void tcp_reset_reno_ack(struct tcp_sock *tp)
 {
-	tp->sacked_out = 0;
+	tp->acked_out = 0;
 }
 
 static void tcp_clear_retrans_partial(struct tcp_sock *tp)
@@ -1824,6 +1824,7 @@ void tcp_clear_retrans(struct tcp_sock *tp)
 
 	tp->fackets_out = 0;
 	tp->sacked_out = 0;
+	tp->acked_out = 0;
 }
 
 /* Enter Loss state. If "how" is not zero, forget all SACK information
@@ -1853,11 +1854,12 @@ void tcp_enter_loss(struct sock *sk, int how)
 	tcp_clear_retrans_partial(tp);
 
 	if (tcp_is_reno(tp))
-		tcp_reset_reno_sack(tp);
+		tcp_reset_reno_ack(tp);
 
 	tp->undo_marker = tp->snd_una;
 	if (how) {
 		tp->sacked_out = 0;
+		tp->acked_out = 0;
 		tp->fackets_out = 0;
 	}
 	tcp_clear_all_retrans_hints(tp);
@@ -1917,7 +1919,7 @@ static bool tcp_check_sack_reneging(struct sock *sk, int flag)
 
 static inline int tcp_fackets_out(const struct tcp_sock *tp)
 {
-	return tcp_is_reno(tp) ? tp->sacked_out + 1 : tp->fackets_out;
+	return tcp_is_reno(tp) ? tp->acked_out + 1 : tp->fackets_out;
 }
 
 /* Heurestics to calculate number of duplicate ACKs. There's no dupACKs
@@ -1937,7 +1939,7 @@ static inline int tcp_fackets_out(const struct tcp_sock *tp)
  */
 static inline int tcp_dupack_heuristics(const struct tcp_sock *tp)
 {
-	return tcp_is_fack(tp) ? tp->fackets_out : tp->sacked_out + 1;
+	return tcp_is_fack(tp) ? tp->fackets_out : tcp_acked_out(tp) + 1;
 }
 
 static bool tcp_pause_early_retransmit(struct sock *sk, int flag)
@@ -2073,7 +2075,7 @@ static bool tcp_time_to_recover(struct sock *sk, int flag)
 	 */
 	packets_out = tp->packets_out;
 	if (packets_out <= tp->reordering &&
-	    tp->sacked_out >= max_t(__u32, packets_out/2, sysctl_tcp_reordering) &&
+	    tcp_acked_out(tp) >= max_t(__u32, packets_out/2, sysctl_tcp_reordering) &&
 	    !tcp_may_send_now(sk)) {
 		/* We have nothing to send. This connection is limited
 		 * either by receiver window or by application.
@@ -2096,8 +2098,8 @@ static bool tcp_time_to_recover(struct sock *sk, int flag)
 	 * Mitigation A.3 in the RFC and delay the retransmission for a short
 	 * interval if appropriate.
 	 */
-	if (tp->do_early_retrans && !tp->retrans_out && tp->sacked_out &&
-	    (tp->packets_out >= (tp->sacked_out + 1) && tp->packets_out < 4) &&
+	if (tp->do_early_retrans && !tp->retrans_out && (tp->sacked_out || tp->acked_out) &&
+	    (tp->packets_out >= (tcp_acked_out(tp) + 1) && tp->packets_out < 4) &&
 	    !tcp_may_send_now(sk))
 		return !tcp_pause_early_retransmit(sk, flag);
 
@@ -2571,7 +2573,7 @@ void tcp_simple_retransmit(struct sock *sk)
 		return;
 
 	if (tcp_is_reno(tp))
-		tcp_limit_reno_sacked(tp);
+		tcp_limit_reno_acked(tp);
 
 	tcp_verify_left_out(tp);
 
@@ -2658,9 +2660,9 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack)
 		 * delivered. Lower inflight to clock out (re)tranmissions.
 		 */
 		if (after(tp->snd_nxt, tp->high_seq) && is_dupack)
-			tcp_add_reno_sack(sk);
+			tcp_add_reno_ack(sk);
 		else if (flag & FLAG_SND_UNA_ADVANCED)
-			tcp_reset_reno_sack(tp);
+			tcp_reset_reno_ack(tp);
 	}
 	if (tcp_try_undo_loss(sk, false))
 		return;
@@ -2689,9 +2691,11 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 	int newly_acked_sacked = 0;
 	int fast_rexmit = 0;
 
-	if (WARN_ON(!tp->packets_out && tp->sacked_out))
+	if (WARN_ON(!tp->packets_out && (tp->sacked_out || tp->acked_out))) {
 		tp->sacked_out = 0;
-	if (WARN_ON(!tp->sacked_out && tp->fackets_out))
+		tp->acked_out = 0;
+	}
+	if (WARN_ON(!tp->sacked_out && !tp->acked_out && tp->fackets_out))
 		tp->fackets_out = 0;
 
 	/* Now state machine starts.
@@ -2724,7 +2728,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 
 		case TCP_CA_Recovery:
 			if (tcp_is_reno(tp))
-				tcp_reset_reno_sack(tp);
+				tcp_reset_reno_ack(tp);
 			if (tcp_try_undo_recovery(sk))
 				return;
 			tcp_end_cwnd_reduction(sk);
@@ -2737,11 +2741,11 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 	case TCP_CA_Recovery:
 		if (!(flag & FLAG_SND_UNA_ADVANCED)) {
 			if (tcp_is_reno(tp) && is_dupack)
-				tcp_add_reno_sack(sk);
+				tcp_add_reno_ack(sk);
 		} else
 			do_lost = tcp_try_undo_partial(sk, pkts_acked);
 		newly_acked_sacked = prior_packets - tp->packets_out +
-				     tp->sacked_out - prior_sacked;
+				     tcp_acked_out(tp) - prior_sacked;
 		break;
 	case TCP_CA_Loss:
 		tcp_process_loss(sk, flag, is_dupack);
@@ -2751,12 +2755,12 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 	default:
 		if (tcp_is_reno(tp)) {
 			if (flag & FLAG_SND_UNA_ADVANCED)
-				tcp_reset_reno_sack(tp);
+				tcp_reset_reno_ack(tp);
 			if (is_dupack)
-				tcp_add_reno_sack(sk);
+				tcp_add_reno_ack(sk);
 		}
 		newly_acked_sacked = prior_packets - tp->packets_out +
-				     tp->sacked_out - prior_sacked;
+				     tcp_acked_out(tp) - prior_sacked;
 
 		if (icsk->icsk_ca_state <= TCP_CA_Disorder)
 			tcp_try_undo_dsack(sk);
@@ -3040,7 +3044,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		tcp_rearm_rto(sk);
 
 		if (tcp_is_reno(tp)) {
-			tcp_remove_reno_sacks(sk, pkts_acked);
+			tcp_remove_reno_acks(sk, pkts_acked);
 		} else {
 			int delta;
 
@@ -3076,6 +3080,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 #if FASTRETRANS_DEBUG > 0
 	WARN_ON((int)tp->sacked_out < 0);
+	WARN_ON((int)tp->acked_out < 0);
 	WARN_ON((int)tp->lost_out < 0);
 	WARN_ON((int)tp->retrans_out < 0);
 	if (!tp->packets_out && tcp_is_sack(tp)) {
@@ -3089,6 +3094,11 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 			pr_debug("Leak s=%u %d\n",
 				 tp->sacked_out, icsk->icsk_ca_state);
 			tp->sacked_out = 0;
+		}
+		if (tp->acked_out) {
+			pr_debug("Leak a=%u %d\n",
+				 tp->acked_out, icsk->icsk_ca_state);
+			tp->acked_out = 0;
 		}
 		if (tp->retrans_out) {
 			pr_debug("Leak r=%u %d\n",
@@ -3268,7 +3278,7 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	u32 prior_in_flight;
 	u32 prior_fackets;
 	int prior_packets = tp->packets_out;
-	int prior_sacked = tp->sacked_out;
+	int prior_sacked = tcp_acked_out(tp);
 	int pkts_acked = 0;
 	int previous_packets_out = 0;
 

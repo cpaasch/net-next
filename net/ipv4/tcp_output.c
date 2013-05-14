@@ -1025,7 +1025,7 @@ static void tcp_adjust_pcount(struct sock *sk, const struct sk_buff *skb, int de
 
 	/* Reno case is special. Sigh... */
 	if (tcp_is_reno(tp) && decr > 0)
-		tp->sacked_out -= min_t(u32, tp->sacked_out, decr);
+		tp->acked_out -= min_t(u32, tp->acked_out, decr);
 
 	tcp_adjust_fackets_out(sk, skb, decr);
 

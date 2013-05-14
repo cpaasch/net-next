@@ -878,9 +878,14 @@ static inline void tcp_disable_early_retrans(struct tcp_sock *tp)
 	tp->do_early_retrans = 0;
 }
 
+static inline unsigned int tcp_acked_out(const struct tcp_sock *tp)
+{
+	return tp->sacked_out + tp->acked_out;
+}
+
 static inline unsigned int tcp_left_out(const struct tcp_sock *tp)
 {
-	return tp->sacked_out + tp->lost_out;
+	return tcp_acked_out(tp) + tp->lost_out;
 }
 
 /* This determines how many packets are "in the network" to the best
@@ -1459,12 +1464,12 @@ static inline void tcp_push_pending_frames(struct sock *sk)
 }
 
 /* Start sequence of the skb just after the highest skb with SACKed
- * bit, valid only if sacked_out > 0 or when the caller has ensured
+ * bit, valid only if sacked_out or acked_out > 0 or when the caller has ensured
  * validity by itself.
  */
 static inline u32 tcp_highest_sack_seq(struct tcp_sock *tp)
 {
-	if (!tp->sacked_out)
+	if (!tp->sacked_out && !tp->acked_out)
 		return tp->snd_una;
 
 	if (tp->highest_sack == NULL)
@@ -1494,8 +1499,10 @@ static inline void tcp_highest_sack_combine(struct sock *sk,
 					    struct sk_buff *old,
 					    struct sk_buff *new)
 {
-	if (tcp_sk(sk)->sacked_out && (old == tcp_sk(sk)->highest_sack))
-		tcp_sk(sk)->highest_sack = new;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if ((tp->sacked_out || tp->acked_out) && (old == tp->highest_sack))
+		tp->highest_sack = new;
 }
 
 /* Determines whether this is a thin stream (which may suffer from
