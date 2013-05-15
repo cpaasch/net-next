@@ -1865,7 +1865,7 @@ void tcp_enter_loss(struct sock *sk, int how)
 
 	tcp_clear_retrans_partial(tp);
 
-	if (tcp_is_reno(tp))
+	if (tcp_is_reno(tp) || tp->acked_out)
 		tcp_reset_reno_ack(tp);
 
 	tp->undo_marker = tp->snd_una;
@@ -2667,7 +2667,7 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack)
 	}
 	if (flag & FLAG_DATA_ACKED)
 		icsk->icsk_retransmits = 0;
-	if (tcp_is_reno(tp)) {
+	if (tcp_is_reno(tp) || tp->acked_out) {
 		/* A Reno DUPACK means new data in F-RTO step 2.b above are
 		 * delivered. Lower inflight to clock out (re)tranmissions.
 		 */
@@ -2739,7 +2739,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 			break;
 
 		case TCP_CA_Recovery:
-			if (tcp_is_reno(tp))
+			if (tcp_is_reno(tp) || tp->acked_out)
 				tcp_reset_reno_ack(tp);
 			if (tcp_try_undo_recovery(sk))
 				return;
@@ -2765,7 +2765,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 			return;
 		/* Fall through to processing in Open state. */
 	default:
-		if (tcp_is_reno(tp)) {
+		if (tcp_is_reno(tp) || tp->acked_out) {
 			if (flag & FLAG_SND_UNA_ADVANCED)
 				tcp_reset_reno_ack(tp);
 			if (is_dupack)
