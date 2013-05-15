@@ -2671,7 +2671,7 @@ static void tcp_process_loss(struct sock *sk, int flag, bool is_dupack)
 		/* A Reno DUPACK means new data in F-RTO step 2.b above are
 		 * delivered. Lower inflight to clock out (re)tranmissions.
 		 */
-		if (after(tp->snd_nxt, tp->high_seq) && is_dupack)
+		if (tcp_is_reno(tp) && after(tp->snd_nxt, tp->high_seq) && is_dupack)
 			tcp_add_reno_ack(sk);
 		else if (flag & FLAG_SND_UNA_ADVANCED)
 			tcp_reset_reno_ack(tp);
@@ -2768,7 +2768,7 @@ static void tcp_fastretrans_alert(struct sock *sk, int pkts_acked,
 		if (tcp_is_reno(tp) || tp->acked_out) {
 			if (flag & FLAG_SND_UNA_ADVANCED)
 				tcp_reset_reno_ack(tp);
-			if (is_dupack)
+			if (is_dupack && tcp_is_reno(tp))
 				tcp_add_reno_ack(sk);
 		}
 		newly_acked_sacked = prior_packets - tp->packets_out +
@@ -3055,10 +3055,13 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		tcp_ack_update_rtt(sk, flag, seq_rtt);
 		tcp_rearm_rto(sk);
 
-		if (tcp_is_reno(tp) || tp->acked_out) {
+		if (tcp_is_reno(tp)) {
 			tcp_remove_reno_acks(sk, pkts_acked);
 		} else {
 			int delta;
+
+			if (tp->acked_out)
+				tcp_remove_reno_acks(sk, pkts_acked);
 
 			/* Non-retransmitted hole got filled? That's reordering */
 			if (reord < prior_fackets)

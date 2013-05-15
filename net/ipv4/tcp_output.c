@@ -1000,7 +1000,7 @@ static void tcp_adjust_fackets_out(struct sock *sk, const struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
-	if (!tp->sacked_out || tcp_is_reno(tp))
+	if ((!tp->sacked_out && !tp->acked_out) || tcp_is_reno(tp))
 		return;
 
 	if (after(tcp_highest_sack_seq(tp), TCP_SKB_CB(skb)->seq))
