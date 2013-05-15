@@ -2584,7 +2584,7 @@ void tcp_simple_retransmit(struct sock *sk)
 	if (prior_lost == tp->lost_out)
 		return;
 
-	if (tcp_is_reno(tp))
+	if (tcp_is_reno(tp) || tp->acked_out)
 		tcp_limit_reno_acked(tp);
 
 	tcp_verify_left_out(tp);
@@ -3055,7 +3055,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		tcp_ack_update_rtt(sk, flag, seq_rtt);
 		tcp_rearm_rto(sk);
 
-		if (tcp_is_reno(tp)) {
+		if (tcp_is_reno(tp) || tp->acked_out) {
 			tcp_remove_reno_acks(sk, pkts_acked);
 		} else {
 			int delta;
