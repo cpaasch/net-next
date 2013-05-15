@@ -302,9 +302,6 @@ static void uml_net_user_timer_expire(unsigned long _conn)
 #endif
 }
 
-<<<<<<< HEAD
-static void setup_etheraddr(struct net_device *dev, char *str)
-=======
 #ifndef CONFIG_UML_NET_RANDOM_MAC
 
 /* Compute a SHA1 hash of the UML instance's id and
@@ -340,8 +337,7 @@ static int compute_hash(const char *umid, const char *ifname, char *hash) {
 
 #endif
 
-
-static int setup_etheraddr(char *str, unsigned char *addr, char *name)
+static void setup_etheraddr(struct net_device *dev, char *str)
 {
 	unsigned char *addr = dev->dev_addr;
 	char *end;
@@ -393,11 +389,11 @@ random:
 	eth_hw_addr_random(dev);
 #else
 	printk(KERN_INFO
-	       "Computing a digest to use as ethernet address for device %s\n", name);
-	if (compute_hash(get_umid(), name, hash)) {
+	       "Computing a digest to use as ethernet address for device %s\n", dev->name);
+	if (compute_hash(get_umid(), dev->name, hash)) {
 		printk(KERN_WARNING
 		       "Could not compute digest to use as ethernet address for device %s. "
-		       "Using random address instead.\n", name);
+		       "Using random address instead.\n", dev->name);
 		random_ether_addr(addr);
 	} else {
 		for (i=0; i < 6; i++)
@@ -406,7 +402,7 @@ random:
 	addr [0] &= 0xfe; /* clear multicast bit */
 	addr [0] |= 0x02; /* set local assignment bit (IEEE802) */
 #endif
-	return 1;
+	return;
 }
 
 static DEFINE_SPINLOCK(devices_lock);
