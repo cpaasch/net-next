@@ -1544,9 +1544,18 @@ static int tcp_sack_cache_ok(const struct tcp_sock *tp, const struct tcp_sack_bl
 	return cache < tp->recv_sack_cache + ARRAY_SIZE(tp->recv_sack_cache);
 }
 
+/* Emulate SACKs for SACKless connection: account for a new dupack. */
+static void tcp_add_reno_ack(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	tp->acked_out++;
+	tcp_check_reno_reordering(sk, 0);
+	tcp_verify_left_out(tp);
+}
+
 static int
 tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
-			u32 prior_snd_una)
+			u32 prior_snd_una, int flag)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const unsigned char *ptr = (skb_transport_header(ack_skb) +
@@ -1616,14 +1625,23 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 			if (i == 0)
 				first_sack_index = -1;
 
-			/* We have to reproduce the first check of
+			/* If we are coming from tcp_ack, with an old_ack, we
+			 * should not increase acked_out, as the ack is old :)
+			 *
+			 * Only increase acked_out, if this is really a duplicate
+			 * ack. Check is similar to the one in tcp_ack, when
+			 * setting is_dupack.
+			 *
+			 * We have to reproduce the first check of
 			 * tcp_is_sackblock_valid, because we don't want to
 			 * account dup-acks if the sack-blog is corrupted.
 			 */
 			if (first &&
+			    !before(TCP_SKB_CB(skb)->ack_seq, prior_snd_una) &&
+			    !(flag & (FLAG_SND_UNA_ADVANCED | FLAG_NOT_DUP)) &&
 			    before(sp[used_sacks].start_seq, sp[used_sacks].end_seq)) {
 				first = false; /* Only account dupack once per packet */
-				tp->acked_out++;
+				tcp_add_reno_ack(tp);
 			}
 			continue;
 		}
@@ -1787,16 +1805,6 @@ static void tcp_check_reno_reordering(struct sock *sk, const int addend)
 	struct tcp_sock *tp = tcp_sk(sk);
 	if (tcp_limit_reno_acked(tp))
 		tcp_update_reordering(sk, tp->packets_out + addend, 0);
-}
-
-/* Emulate SACKs for SACKless connection: account for a new dupack. */
-
-static void tcp_add_reno_ack(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	tp->acked_out++;
-	tcp_check_reno_reordering(sk, 0);
-	tcp_verify_left_out(tp);
 }
 
 /* Account for ACK, ACKing some data in Reno Recovery phase. */
@@ -3352,7 +3360,7 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 		flag |= tcp_ack_update_window(sk, skb, ack, ack_seq);
 
 		if (TCP_SKB_CB(skb)->sacked)
-			flag |= tcp_sacktag_write_queue(sk, skb, prior_snd_una);
+			flag |= tcp_sacktag_write_queue(sk, skb, prior_snd_una, flag);
 
 		if (TCP_ECN_rcv_ecn_echo(tp, tcp_hdr(skb)))
 			flag |= FLAG_ECE;
@@ -3425,7 +3433,7 @@ old_ack:
 	 * If data was DSACKed, see if we can undo a cwnd reduction.
 	 */
 	if (TCP_SKB_CB(skb)->sacked) {
-		flag |= tcp_sacktag_write_queue(sk, skb, prior_snd_una);
+		flag |= tcp_sacktag_write_queue(sk, skb, prior_snd_una, flag);
 		tcp_fastretrans_alert(sk, pkts_acked, prior_sacked,
 				      prior_packets, is_dupack, flag);
 	}
