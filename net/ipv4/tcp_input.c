@@ -1544,6 +1544,34 @@ static int tcp_sack_cache_ok(const struct tcp_sock *tp, const struct tcp_sack_bl
 	return cache < tp->recv_sack_cache + ARRAY_SIZE(tp->recv_sack_cache);
 }
 
+/* Limits sacked_out so that sum with lost_out isn't ever larger than
+ * packets_out. Returns false if sacked_out adjustement wasn't necessary.
+ */
+static bool tcp_limit_reno_acked(struct tcp_sock *tp)
+{
+	u32 holes;
+
+	holes = max(tp->lost_out, 1U);
+	holes = min(holes, tp->packets_out);
+
+	if ((tp->acked_out + holes) > tp->packets_out) {
+		tp->acked_out = tp->packets_out - holes;
+		return true;
+	}
+	return false;
+}
+
+/* If we receive more dupacks than we expected counting segments
+ * in assumption of absent reordering, interpret this as reordering.
+ * The only another reason could be bug in receiver TCP.
+ */
+static void tcp_check_reno_reordering(struct sock *sk, const int addend)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	if (tcp_limit_reno_acked(tp))
+		tcp_update_reordering(sk, tp->packets_out + addend, 0);
+}
+
 /* Emulate SACKs for SACKless connection: account for a new dupack. */
 static void tcp_add_reno_ack(struct sock *sk)
 {
@@ -1551,6 +1579,28 @@ static void tcp_add_reno_ack(struct sock *sk)
 	tp->acked_out++;
 	tcp_check_reno_reordering(sk, 0);
 	tcp_verify_left_out(tp);
+}
+
+/* Account for ACK, ACKing some data in Reno Recovery phase. */
+
+static void tcp_remove_reno_acks(struct sock *sk, int acked)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (acked > 0) {
+		/* One ACK acked hole. The rest eat duplicate ACKs. */
+		if (acked - 1 >= tp->acked_out)
+			tp->acked_out = 0;
+		else
+			tp->acked_out -= acked - 1;
+	}
+	tcp_check_reno_reordering(sk, acked);
+	tcp_verify_left_out(tp);
+}
+
+static inline void tcp_reset_reno_ack(struct tcp_sock *tp)
+{
+	tp->acked_out = 0;
 }
 
 static int
@@ -1641,7 +1691,7 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 			    !(flag & (FLAG_SND_UNA_ADVANCED | FLAG_NOT_DUP)) &&
 			    before(sp[used_sacks].start_seq, sp[used_sacks].end_seq)) {
 				first = false; /* Only account dupack once per packet */
-				tcp_add_reno_ack(tp);
+				tcp_add_reno_ack(sk);
 			}
 			continue;
 		}
@@ -1777,56 +1827,6 @@ out:
 	WARN_ON((int)tcp_packets_in_flight(tp) < 0);
 #endif
 	return state.flag;
-}
-
-/* Limits sacked_out so that sum with lost_out isn't ever larger than
- * packets_out. Returns false if sacked_out adjustement wasn't necessary.
- */
-static bool tcp_limit_reno_acked(struct tcp_sock *tp)
-{
-	u32 holes;
-
-	holes = max(tp->lost_out, 1U);
-	holes = min(holes, tp->packets_out);
-
-	if ((tp->acked_out + holes) > tp->packets_out) {
-		tp->acked_out = tp->packets_out - holes;
-		return true;
-	}
-	return false;
-}
-
-/* If we receive more dupacks than we expected counting segments
- * in assumption of absent reordering, interpret this as reordering.
- * The only another reason could be bug in receiver TCP.
- */
-static void tcp_check_reno_reordering(struct sock *sk, const int addend)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	if (tcp_limit_reno_acked(tp))
-		tcp_update_reordering(sk, tp->packets_out + addend, 0);
-}
-
-/* Account for ACK, ACKing some data in Reno Recovery phase. */
-
-static void tcp_remove_reno_acks(struct sock *sk, int acked)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-
-	if (acked > 0) {
-		/* One ACK acked hole. The rest eat duplicate ACKs. */
-		if (acked - 1 >= tp->acked_out)
-			tp->acked_out = 0;
-		else
-			tp->acked_out -= acked - 1;
-	}
-	tcp_check_reno_reordering(sk, acked);
-	tcp_verify_left_out(tp);
-}
-
-static inline void tcp_reset_reno_ack(struct tcp_sock *tp)
-{
-	tp->acked_out = 0;
 }
 
 static void tcp_clear_retrans_partial(struct tcp_sock *tp)
