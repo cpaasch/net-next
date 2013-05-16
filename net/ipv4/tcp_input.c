@@ -2375,7 +2375,7 @@ static int tcp_try_undo_partial(struct sock *sk, int acked)
 	int failed = tcp_is_reno(tp) || (tcp_fackets_out(tp) > tp->reordering);
 
 	if (tcp_may_undo(tp)) {
-		/* Plain luck! Hole if filled with delayed
+		/* Plain luck! Hole is filled with delayed
 		 * packet, rather than with a retransmit.
 		 */
 		if (!tcp_any_retrans_done(sk))
