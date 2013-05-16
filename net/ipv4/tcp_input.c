@@ -1691,6 +1691,7 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 			    !(flag & (FLAG_SND_UNA_ADVANCED | FLAG_NOT_DUP)) &&
 			    before(sp[used_sacks].start_seq, sp[used_sacks].end_seq)) {
 				first = false; /* Only account dupack once per packet */
+				tcp_disable_fack(tp);
 				tcp_add_reno_ack(sk);
 			}
 			continue;
