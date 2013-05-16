@@ -1687,7 +1687,7 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 			 * account dup-acks if the sack-blog is corrupted.
 			 */
 			if (first &&
-			    !before(TCP_SKB_CB(skb)->ack_seq, prior_snd_una) &&
+			    !before(TCP_SKB_CB(ack_skb)->ack_seq, prior_snd_una) &&
 			    !(flag & (FLAG_SND_UNA_ADVANCED | FLAG_NOT_DUP)) &&
 			    before(sp[used_sacks].start_seq, sp[used_sacks].end_seq)) {
 				first = false; /* Only account dupack once per packet */
