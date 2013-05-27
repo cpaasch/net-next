@@ -1624,7 +1624,7 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 	state.flag = 0;
 	state.reord = tp->packets_out;
 
-	if (!tp->sacked_out && !tp->acked_out) {
+	if (!tp->sacked_out) {
 		if (WARN_ON(tp->fackets_out))
 			tp->fackets_out = 0;
 		tcp_highest_sack_reset(sk);
