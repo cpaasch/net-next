@@ -181,13 +181,18 @@ static void tcpm_check_stamp(struct tcp_metrics_block *tm, struct dst_entry *dst
 }
 
 #define TCP_METRICS_RECLAIM_DEPTH	5
+#define TCP_METRICS_RECLAIM_DEPTH_DST	32
 #define TCP_METRICS_RECLAIM_PTR		(struct tcp_metrics_block *) 0x1UL
 
-static struct tcp_metrics_block *tcp_get_encode(struct tcp_metrics_block *tm, int depth)
+static struct tcp_metrics_block *tcp_get_encode(struct tcp_metrics_block *tm,
+						int depth_general,
+						int depth_dst)
 {
 	if (tm)
 		return tm;
-	if (depth > TCP_METRICS_RECLAIM_DEPTH)
+	if (depth_general > TCP_METRICS_RECLAIM_DEPTH)
+		return TCP_METRICS_RECLAIM_PTR;
+	if (depth_dst > TCP_METRICS_RECLAIM_DEPTH_DST)
 		return TCP_METRICS_RECLAIM_PTR;
 	return NULL;
 }
@@ -197,16 +202,19 @@ static struct tcp_metrics_block *__tcp_get_metrics(const struct inetpeer_addr *s
 						   struct net *net, unsigned int hash)
 {
 	struct tcp_metrics_block *tm;
-	int depth = 0;
+	int depth_dst = 0, depth_general = 0;
 
 	for (tm = rcu_dereference(net->ipv4.tcp_metrics_hash[hash].chain); tm;
 	     tm = rcu_dereference(tm->tcpm_next)) {
 		if (addr_same(&tm->tcpm_saddr, saddr) &&
 		    addr_same(&tm->tcpm_daddr, daddr))
 			break;
-		depth++;
+		if (addr_same(&tm->tcpm_daddr, daddr))
+			depth_dst++;
+		else
+			depth_general++;
 	}
-	return tcp_get_encode(tm, depth);
+	return tcp_get_encode(tm, depth_general, depth_dst);
 }
 
 static struct tcp_metrics_block *__tcp_get_metrics_req(struct request_sock *req,
